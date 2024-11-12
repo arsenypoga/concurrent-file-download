@@ -8,7 +8,9 @@ urls = [
     "https://storage.googleapis.com/public_test_access_ae/output_40sec.mp4",
     "https://storage.googleapis.com/public_test_access_ae/output_50sec.mp4",
     "https://storage.googleapis.com/public_test_access_ae/output_60sec.mp4",
+    # "http://localhost:3001/download",
 ]
+timeout = aiohttp.ClientTimeout(total=20)
 
 
 async def main():
@@ -17,63 +19,48 @@ async def main():
 
 async def download_url(url: str):
     base_file_name = url.split("/")[-1]
-    partial_file = Path("downloads/" + base_file_name + ".part")
+    # Doing this for the file path join just in case this is ran on Windows, with
+    # different path separators
+    partial_file = Path("downloads") / (base_file_name + ".part")
+
+    headers = {}
+    file_read_mode = "wb"
+    downloaded_bytes = 0
+
+    if partial_file.exists():
+        print("File exists; Resuming download")
+        file_size = partial_file.stat().st_size
+        headers["Range"] = f"bytes={file_size}"
+        file_read_mode = "ab"
+        downloaded_bytes = file_size
+    else:
+        print("New file; Starting new download")
 
     retry_count = 0
     while retry_count < 5:
         try:
-            if partial_file.exists():
-                print("Resuming download")
-                file_size = partial_file.stat().st_size
+            async with aiohttp.ClientSession(timeout=timeout) as client:
+                async with client.get(url, headers=headers) as resp:
+                    if resp.status > 300:
+                        # Should use own exceptions here; using standard Exception due to POC
+                        raise Exception(f"Bad Status: {resp.status}")
 
-                async with aiohttp.ClientSession() as client:
-                    async with client.get(
-                        url, headers={"Range": f"bytes={file_size}-"}
-                    ) as resp:
-                        if resp.status > 300:
-                            # Should use own exceptions here; using standard Exception due to POC
-                            raise Exception(f"Bad Status: {resp.status}")
+                    total_bytes = resp.headers.get("Content-Length", 0)
+                    print(f"Total file size: {total_bytes}")
 
-                        total_bytes = resp.headers.get("Content-Length", 0)
-                        print(f"Total file size: {total_bytes}")
-
-                        with partial_file.open("ab") as f:
-                            downloaded_bytes = file_size
-                            async for chunk in resp.content.iter_chunked(1024 * 64):
-                                f.write(chunk)
-                                downloaded_bytes += len(chunk)
-                                print(
-                                    f"Downloaded {
-                                        downloaded_bytes}/{total_bytes} bytes",
-                                    end="\r",
-                                )
-            else:
-                print("Downloading new file")
-                async with aiohttp.ClientSession() as client:
-                    async with client.get(url) as resp:
-                        if resp.status != 200:
-                            raise Exception(
-                                f"Failed to download file due to status: {
-                                    resp.status}"
+                    with partial_file.open(file_read_mode) as f:
+                        async for chunk in resp.content.iter_chunked(1024 * 64):
+                            f.write(chunk)
+                            downloaded_bytes += len(chunk)
+                            # This works nicely with single file, not so much with multiple
+                            print(
+                                f"Downloaded {
+                                    downloaded_bytes}/{total_bytes} bytes",
+                                end="\r",
                             )
-
-                        total_bytes = resp.headers.get("Content-Length", 0)
-                        print(f"Total file size: {total_bytes}")
-
-                        with partial_file.open("wb") as f:
-                            downloaded_bytes = 0
-
-                            async for chunk in resp.content.iter_chunked(1024 * 64):
-                                f.write(chunk)
-                                downloaded_bytes += len(chunk)
-                                print(
-                                    f"Downloaded {
-                                        downloaded_bytes}/{total_bytes} bytes",
-                                    end="\r",
-                                )
-
-            partial_file = partial_file.rename(
-                partial_file.parent / partial_file.stem)
+            # pathhlib dorking - since the current filename has .part appended to the end of it
+            # I remove said part with the .stem
+            partial_file = partial_file.rename(partial_file.parent / partial_file.stem)
             print(f"Downloaded file {partial_file.absolute()}")
             return
         except Exception as e:
