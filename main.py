@@ -12,50 +12,76 @@ urls = [
 
 
 async def main():
-    async with aiohttp.ClientSession() as client:
-        await download_file(client, urls[0])
+    await asyncio.gather(*[download_url(url) for url in urls])
 
 
-async def download_file(client: aiohttp.ClientSession, url: str):
+async def download_url(url: str):
     base_file_name = url.split("/")[-1]
     file = Path("downloads/" + base_file_name + ".part")
 
-    if file.exists():
-        print("Resuming download")
-        file_size = file.stat().st_size
-        async with client.get(url, headers={"Range": f"bytes={file_size}-"}) as resp:
-            total_bytes = resp.headers.get("Content-Length", 0)
-            print(f"Total file size: {total_bytes}")
+    retry_count = 0
+    while retry_count < 5:
+        try:
+            if file.exists():
+                print("Resuming download")
+                file_size = file.stat().st_size
 
-            with file.open("ab") as f:
-                downloaded_bytes = file_size
-                async for chunk in resp.content.iter_chunked(1024 * 64):
-                    f.write(chunk)
-                    downloaded_bytes += len(chunk)
-                    print(
-                        f"Downloaded {
-                            downloaded_bytes}/{total_bytes} bytes",
-                        end="\r",
-                    )
-    else:
-        print("Downloading new file")
-        async with client.get(url) as resp:
-            total_bytes = resp.headers.get("Content-Length", 0)
-            print(f"Total file size: {total_bytes}")
+                async with aiohttp.ClientSession() as client:
+                    async with client.get(
+                        url, headers={"Range": f"bytes={file_size}-"}
+                    ) as resp:
+                        if resp.status > 300:
+                            # Should use own exceptions here; using standard Exception due to POC
+                            raise Exception(f"Bad Status: {resp.status}")
 
-            with file.open("wb") as f:
-                downloaded_bytes = 0
+                        total_bytes = resp.headers.get("Content-Length", 0)
+                        print(f"Total file size: {total_bytes}")
 
-                async for chunk in resp.content.iter_chunked(1024 * 64):
-                    f.write(chunk)
-                    downloaded_bytes += len(chunk)
-                    print(
-                        f"Downloaded {
-                            downloaded_bytes}/{total_bytes} bytes",
-                        end="\r",
-                    )
-    file = file.rename(file.parent / file.stem)
-    print(f"Downloaded file {file.absolute()}")
+                        with file.open("ab") as f:
+                            downloaded_bytes = file_size
+                            async for chunk in resp.content.iter_chunked(1024 * 64):
+                                f.write(chunk)
+                                downloaded_bytes += len(chunk)
+                                print(
+                                    f"Downloaded {
+                                        downloaded_bytes}/{total_bytes} bytes",
+                                    end="\r",
+                                )
+            else:
+                print("Downloading new file")
+                async with aiohttp.ClientSession() as client:
+                    async with client.get(url) as resp:
+                        if resp.status != 200:
+                            raise Exception(
+                                f"Failed to download file due to status: {
+                                    resp.status}"
+                            )
+
+                        total_bytes = resp.headers.get("Content-Length", 0)
+                        print(f"Total file size: {total_bytes}")
+
+                        with file.open("wb") as f:
+                            downloaded_bytes = 0
+
+                            async for chunk in resp.content.iter_chunked(1024 * 64):
+                                f.write(chunk)
+                                downloaded_bytes += len(chunk)
+                                print(
+                                    f"Downloaded {
+                                        downloaded_bytes}/{total_bytes} bytes",
+                                    end="\r",
+                                )
+
+        except Exception as e:
+            sleep_time = 0.5 * 2 ** (retry_count)
+            retry_count += 1
+            print(f"Failed to download file due to {e}. Retry {
+                retry_count}/{5}; Retrying in {sleep_time}")
+            await asyncio.sleep(sleep_time)
+
+        file = file.rename(file.parent / file.stem)
+        print(f"Downloaded file {file.absolute()}")
+        return
 
 
 if __name__ == "__main__":
