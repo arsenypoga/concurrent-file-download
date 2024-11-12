@@ -174,5 +174,4 @@ poetry.toml
 pyrightconfig.json
 
 tests/
-downloads/
 # End of https://www.toptal.com/developers/gitignore/api/python
