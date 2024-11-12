@@ -23,17 +23,37 @@ async def download_file(client: aiohttp.ClientSession, url: str):
     if file.exists():
         print("Resuming download")
         file_size = file.stat().st_size
-        async with client.get(url, headers={"Range": f"bytes: {file_size}-"}) as resp:
+        async with client.get(url, headers={"Range": f"bytes={file_size}-"}) as resp:
+            total_bytes = resp.headers.get("Content-Length", 0)
+            print(f"Total file size: {total_bytes}")
+
             with file.open("ab") as f:
+                downloaded_bytes = file_size
                 async for chunk in resp.content.iter_chunked(1024 * 64):
                     f.write(chunk)
+                    downloaded_bytes += len(chunk)
+                    print(
+                        f"Downloaded {
+                            downloaded_bytes}/{total_bytes} bytes",
+                        end="\r",
+                    )
     else:
         print("Downloading new file")
         async with client.get(url) as resp:
+            total_bytes = resp.headers.get("Content-Length", 0)
+            print(f"Total file size: {total_bytes}")
+
             with file.open("wb") as f:
+                downloaded_bytes = 0
+
                 async for chunk in resp.content.iter_chunked(1024 * 64):
                     f.write(chunk)
-
+                    downloaded_bytes += len(chunk)
+                    print(
+                        f"Downloaded {
+                            downloaded_bytes}/{total_bytes} bytes",
+                        end="\r",
+                    )
     file = file.rename(file.parent / file.stem)
     print(f"Downloaded file {file.absolute()}")
 
