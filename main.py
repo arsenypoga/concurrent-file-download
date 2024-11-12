@@ -17,14 +17,14 @@ async def main():
 
 async def download_url(url: str):
     base_file_name = url.split("/")[-1]
-    file = Path("downloads/" + base_file_name + ".part")
+    partial_file = Path("downloads/" + base_file_name + ".part")
 
     retry_count = 0
     while retry_count < 5:
         try:
-            if file.exists():
+            if partial_file.exists():
                 print("Resuming download")
-                file_size = file.stat().st_size
+                file_size = partial_file.stat().st_size
 
                 async with aiohttp.ClientSession() as client:
                     async with client.get(
@@ -37,7 +37,7 @@ async def download_url(url: str):
                         total_bytes = resp.headers.get("Content-Length", 0)
                         print(f"Total file size: {total_bytes}")
 
-                        with file.open("ab") as f:
+                        with partial_file.open("ab") as f:
                             downloaded_bytes = file_size
                             async for chunk in resp.content.iter_chunked(1024 * 64):
                                 f.write(chunk)
@@ -60,7 +60,7 @@ async def download_url(url: str):
                         total_bytes = resp.headers.get("Content-Length", 0)
                         print(f"Total file size: {total_bytes}")
 
-                        with file.open("wb") as f:
+                        with partial_file.open("wb") as f:
                             downloaded_bytes = 0
 
                             async for chunk in resp.content.iter_chunked(1024 * 64):
@@ -72,16 +72,16 @@ async def download_url(url: str):
                                     end="\r",
                                 )
 
+            partial_file = partial_file.rename(
+                partial_file.parent / partial_file.stem)
+            print(f"Downloaded file {partial_file.absolute()}")
+            return
         except Exception as e:
             sleep_time = 0.5 * 2 ** (retry_count)
             retry_count += 1
             print(f"Failed to download file due to {e}. Retry {
                 retry_count}/{5}; Retrying in {sleep_time}")
             await asyncio.sleep(sleep_time)
-
-        file = file.rename(file.parent / file.stem)
-        print(f"Downloaded file {file.absolute()}")
-        return
 
 
 if __name__ == "__main__":

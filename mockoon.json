@@ -30,7 +30,7 @@
             {
               "target": "request_number",
               "modifier": "",
-              "value": "2",
+              "value": "5",
               "invert": false,
               "operator": "equals"
             }
@@ -57,8 +57,8 @@
             {
               "target": "request_number",
               "modifier": "",
-              "value": "1",
-              "invert": false,
+              "value": "5",
+              "invert": true,
               "operator": "equals"
             }
           ],

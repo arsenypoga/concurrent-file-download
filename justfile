@@ -2,4 +2,4 @@ run:
     python ./main.py
 
 clean:
-    rm downloads/*
+    rm downloads/* -f
