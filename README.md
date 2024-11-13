@@ -15,6 +15,7 @@ to install the dependencies.
 
 To run the application:
 1. `poetry run python main.py`
+OR:
 2. activate shell via: `poetry shell`, then run `python main.py`
 
 ## General notes
